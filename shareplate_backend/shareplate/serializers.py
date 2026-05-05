@@ -5,6 +5,8 @@ from .models import Delivery, Item, Request, UserProfile
 
 
 class UserProfileSerializer(serializers.ModelSerializer):
+    phone = serializers.CharField(source='phone_number', default='', allow_blank=True)
+
     class Meta:
         model = UserProfile
         fields = (
@@ -13,7 +15,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
             'first_name',
             'last_name',
             'role',
-            'phone_number',
+            'phone',
             'password',
             'email_notifications_enabled',
             'is_verified',
@@ -29,10 +31,11 @@ class UserProfileSerializer(serializers.ModelSerializer):
 
 class CompactUserSerializer(serializers.ModelSerializer):
     full_name = serializers.SerializerMethodField()
+    phone = serializers.CharField(source='phone_number', default='', allow_blank=True)
 
     class Meta:
         model = UserProfile
-        fields = ('id', 'email', 'first_name', 'last_name', 'full_name', 'role', 'is_verified')
+        fields = ('id', 'email', 'first_name', 'last_name', 'full_name', 'role', 'is_verified', 'phone')
         read_only_fields = ('is_verified',)
 
     def get_full_name(self, obj):

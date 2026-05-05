@@ -16,32 +16,81 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
 const ACTIVE_DONATION_WINDOW_MS = 72 * 60 * 60 * 1000;
+
+const deliveryStatusBadgeMeta = {
+  pending: {
+    label: "Awaiting Pickup",
+    className: "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-50",
+  },
+  assigned: {
+    label: "Claimed",
+    className: "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-50",
+  },
+  picked: {
+    label: "Picked Up",
+    className: "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-50",
+  },
+  delivering: {
+    label: "On the Way",
+    className: "border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-50",
+  },
+  delivered: {
+    label: "Delivered ✓",
+    className: "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-50",
+  },
+} as const;
 
 const DonorDashboard = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const user = getStoredUser();
-  const [isVerified, setIsVerified] = useState(user?.is_verified ?? false);
+  const [isVerified, setIsVerified] = useState(() => {
+    const freshUser = getStoredUser();
+    return freshUser?.is_verified ?? false;
+  });
 
   useEffect(() => {
     if (isVerified) return;
 
-    const interval = setInterval(async () => {
+    let interval: ReturnType<typeof setInterval> | null = null;
+    let cancelled = false;
+
+    const checkNow = async () => {
       try {
         const profile = await api.getMe();
         if (profile.is_verified) {
+          if (cancelled) {
+            return true;
+          }
           setIsVerified(true);
           saveUserSession(profile);
-          clearInterval(interval);
+          return true;
         }
       } catch (error) {
-        console.error("Failed to poll profile:", error);
+        console.error("Failed to check profile:", error);
       }
-    }, 30000);
+      return false;
+    };
 
-    return () => clearInterval(interval);
+    void checkNow().then((alreadyVerified) => {
+      if (alreadyVerified || cancelled) return;
+      interval = setInterval(async () => {
+        const verified = await checkNow();
+        if (verified && interval) {
+          clearInterval(interval);
+        }
+      }, 10000);
+    });
+
+    return () => {
+      cancelled = true;
+      if (interval) {
+        clearInterval(interval);
+      }
+    };
   }, [isVerified]);
 
   const [form, setForm] = useState({
@@ -165,6 +214,7 @@ const DonorDashboard = () => {
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    console.log(sessionStorage.getItem("authToken"));
     createDonationMutation.mutate(form);
   };
 
@@ -227,7 +277,7 @@ const DonorDashboard = () => {
         )}
         <section className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
           <Card className="border-border bg-[#18392b] text-white shadow-sm">
-            <CardContent className="grid gap-6 p-8 lg:grid-cols-[1fr_auto]">
+            <CardContent className="grid gap-6 p-8 :grid-cols-[1fr_auto]">
               <div className="space-y-4">
                 <h1 className="text-4xl font-semibold">Welcome back, {user?.first_name || "Donor"}.</h1>
                 <p className="max-w-2xl text-white/80">Post food and keep track of claims in one place.</p>
@@ -358,16 +408,24 @@ const DonorDashboard = () => {
               ) : (
                 recentRequests.map((request) => (
                   <div key={request.id} className="rounded-3xl border border-border/80 bg-background/80 p-5">
-                    <div className="flex flex-wrap items-start justify-between gap-4">
-                      <div>
-                        <p className="text-lg font-semibold">{request.item_details.name}</p>
-                        <p className="mt-1 text-sm text-muted-foreground">
-                          Claimed by {request.requester?.full_name || request.requester?.email || "Recipient"}
-                        </p>
+                    <div className="flex flex-col gap-1">
+                      <p className="text-lg font-semibold">{request.item_details.name}</p>
+                      <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                        <p>Claimed by {request.requester?.full_name || request.requester?.email || "Recipient"}</p>
+                        <Badge
+                          className={cn(
+                            "border px-3 py-1",
+                            deliveryStatusBadgeMeta[request.delivery_status].className
+                          )}
+                        >
+                          {deliveryStatusBadgeMeta[request.delivery_status].label}
+                        </Badge>
                       </div>
-                      <Badge variant={request.delivery_status === "delivered" ? "secondary" : "outline"}>
-                        {request.delivery_status.replace("_", " ")}
-                      </Badge>
+                    </div>
+                    <div className="mt-3 space-y-1 text-sm text-slate-600">
+                      <p>Claimed by: {request.requester?.first_name || request.requester?.email}</p>
+                      <p> {request.requester?.phone || "Not provided"}</p>
+                      <p> {request.requester?.email}</p>
                     </div>
                     <div className="mt-4 grid gap-3 text-sm text-muted-foreground sm:grid-cols-3">
                       <div className="flex items-center gap-2">

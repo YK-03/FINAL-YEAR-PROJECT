@@ -26,6 +26,7 @@ const Auth = () => {
   const [password, setPassword] = useState("");
   const [email, setEmail] = useState("");
   const [fullName, setFullName] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const navigate = useNavigate();
@@ -68,6 +69,7 @@ const Auth = () => {
         role: selectedRole,
         first_name,
         last_name: rest.join(" "),
+        phone: phoneNumber,
       });
       handleAuthSuccess(token, user);
       toast.success("Account created successfully.");
@@ -176,6 +178,11 @@ const Auth = () => {
                   <div className="space-y-2">
                     <Label htmlFor="email">Email</Label>
                     <Input id="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" required />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="phone">Phone number (optional)</Label>
+                    <Input id="phone" type="tel" value={phoneNumber} onChange={(event) => setPhoneNumber(event.target.value)} placeholder="e.g. 98XXXXXXXX" />
                   </div>
 
                   <div className="space-y-2">

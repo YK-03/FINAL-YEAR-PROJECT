@@ -1,4 +1,5 @@
 import resend
+from decouple import config
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.conf import settings
@@ -9,6 +10,8 @@ def send_admin_verification_email(sender, instance, created, **kwargs):
     if created and instance.role in ['donor', 'recipient']:
         resend.api_key = settings.RESEND_API_KEY
 
+        BASE_URL = config('BASE_URL', default='http://localhost:8000')
+
         subject = f"New {instance.role.capitalize()} Registration: Pending Verification"
         html_content = f"""
         <h2>New {instance.role.capitalize()} Registration — Pending Verification</h2>
@@ -16,9 +19,10 @@ def send_admin_verification_email(sender, instance, created, **kwargs):
         <ul>
             <li><b>Name:</b> {instance.first_name} {instance.last_name}</li>
             <li><b>Email:</b> {instance.email}</li>
+            <li><b>Phone:</b> {instance.phone_number or "Not provided"}</li>
             <li><b>Role:</b> {instance.role.capitalize()}</li>
         </ul>
-        <a href="http://localhost:8000/admin/shareplate/userprofile/{instance.id}/change/" 
+        <a href="{BASE_URL}/api/verify-user/{instance.verification_token}/" 
            style="background:#16a34a;color:white;padding:10px 20px;
                   border-radius:6px;text-decoration:none;display:inline-block;">
           Verify Now

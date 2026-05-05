@@ -1,4 +1,5 @@
 import logging
+import uuid
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.utils.translation import gettext_lazy as _
@@ -52,6 +53,13 @@ class UserProfile(AbstractUser):
     phone_number = models.CharField(max_length=15, blank=True, null=True)
     email_notifications_enabled = models.BooleanField(default=True)
     is_verified = models.BooleanField(default=False)
+    verification_token = models.UUIDField(
+        default=uuid.uuid4,
+        editable=False,
+        null=True,
+        blank=True,
+        db_index=True
+    )
 
     objects = CustomUserManager()
 

@@ -59,8 +59,14 @@ TEMPLATES = [
 WSGI_APPLICATION = 'shareplate_project.wsgi.application'
 
 
+import dj_database_url
+
 DATABASES = {
-    'default': {
+    'default': dj_database_url.config(
+        default=config('DATABASE_URL', default=None),
+        conn_max_age=600,
+        ssl_require=True
+    ) or {
         'ENGINE': config('DB_ENGINE', default='django.db.backends.postgresql'),
         'NAME': config('DB_NAME', default='shareplate_db'),
         'USER': config('DB_USER', default='postgres'),

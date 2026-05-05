@@ -24,6 +24,7 @@ import { geocodeAddress } from "@/lib/geocoding";
 import { clearUserSession, getStoredUser, saveUserSession } from "@/lib/session";
 import LiveBadge from "@/components/LiveBadge";
 import Map from "@/components/Map";
+import SimpleMap from "@/components/SimpleMap";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -93,6 +94,21 @@ const getEtaLabel = (request: DeliveryRequest) => {
   }
 };
 
+const getDeliveryAction = (status: DeliveryRequest["delivery_status"]) => {
+  switch (status) {
+    case "pending":
+      return { nextStatus: "assigned" as const, label: "Start Delivery", loadingLabel: "Starting Delivery..." };
+    case "assigned":
+      return { nextStatus: "picked" as const, label: "Mark as Picked Up", loadingLabel: "Marking as Picked Up..." };
+    case "picked":
+      return { nextStatus: "delivering" as const, label: "Mark as On the Way", loadingLabel: "Marking as On the Way..." };
+    case "delivering":
+      return { nextStatus: "delivered" as const, label: "Mark as Delivered", loadingLabel: "Marking as Delivered..." };
+    default:
+      return null;
+  }
+};
+
 const getCurrentPosition = () =>
   new Promise<{ latitude: number; longitude: number } | null>((resolve) => {
     if (!navigator.geolocation) {
@@ -112,23 +128,25 @@ const getCurrentPosition = () =>
   });
 
 const resolveDonationCoordinates = async (donation: DonationItem) => {
-  if (Number.isFinite(donation.latitude) && Number.isFinite(donation.longitude)) {
-    return {
-      lat: donation.latitude!,
-      lng: donation.longitude!,
-    };
+  console.log("[DONATION DATA]", donation);
+
+  if (!donation.latitude || !donation.longitude) {
+    if (!donation.address) {
+      return null;
+    }
+
+    try {
+      const result = await geocodeAddress(donation.address);
+      return { lat: result.lat, lng: result.lng };
+    } catch {
+      return null;
+    }
   }
 
-  if (!donation.address) {
-    return null;
-  }
-
-  try {
-    const result = await geocodeAddress(donation.address);
-    return { lat: result.lat, lng: result.lng };
-  } catch {
-    return null;
-  }
+  return {
+    lat: donation.latitude,
+    lng: donation.longitude,
+  };
 };
 
 const DonationHeroCard = ({
@@ -213,25 +231,50 @@ const RecipientDashboard = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const user = getStoredUser();
-  const [isVerified, setIsVerified] = useState(user?.is_verified ?? false);
+  const [isVerified, setIsVerified] = useState(() => {
+    const freshUser = getStoredUser();
+    return freshUser?.is_verified ?? false;
+  });
 
   useEffect(() => {
     if (isVerified) return;
 
-    const interval = setInterval(async () => {
+    let interval: ReturnType<typeof setInterval> | null = null;
+    let cancelled = false;
+
+    const checkNow = async () => {
       try {
         const profile = await api.getMe();
         if (profile.is_verified) {
+          if (cancelled) {
+            return true;
+          }
           setIsVerified(true);
           saveUserSession(profile);
-          clearInterval(interval);
+          return true;
         }
       } catch (error) {
-        console.error("Failed to poll profile:", error);
+        console.error("Failed to check profile:", error);
       }
-    }, 30000);
+      return false;
+    };
 
-    return () => clearInterval(interval);
+    void checkNow().then((alreadyVerified) => {
+      if (alreadyVerified || cancelled) return;
+      interval = setInterval(async () => {
+        const verified = await checkNow();
+        if (verified && interval) {
+          clearInterval(interval);
+        }
+      }, 10000);
+    });
+
+    return () => {
+      cancelled = true;
+      if (interval) {
+        clearInterval(interval);
+      }
+    };
   }, [isVerified]);
 
   const [search, setSearch] = useState("");
@@ -251,6 +294,7 @@ const RecipientDashboard = () => {
   const [claimedRequestPreview, setClaimedRequestPreview] = useState<DeliveryRequest | null>(null);
   const [claimRecipientLocation, setClaimRecipientLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [claimedDonationPreview, setClaimedDonationPreview] = useState<DonationItem | null>(null);
+
 
   const donationsQuery = useQuery({
     queryKey: ["donations", "public"],
@@ -386,6 +430,26 @@ const RecipientDashboard = () => {
     onError: (error: Error) => toast.error(error.message),
   });
 
+  const updateDeliveryStatusMutation = useMutation({
+    mutationFn: ({ requestId, status }: { requestId: number; status: DeliveryRequest["delivery_status"] }) =>
+      api.updateDeliveryStatus(requestId, status),
+    onSuccess: (updatedRequest) => {
+      setClaimedRequestPreview((current) => {
+        if (!current || current.id !== updatedRequest.id) {
+          return current;
+        }
+
+        return {
+          ...updatedRequest,
+          item_details: current.item_details,
+        };
+      });
+      queryClient.invalidateQueries({ queryKey: ["requests"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
   const logout = () => {
     clearUserSession();
     navigate("/auth?mode=login");
@@ -434,6 +498,56 @@ const RecipientDashboard = () => {
     return claimedRequestPreview;
   }, [claimedRequestPreview, myClaims, activeClaims]);
   const summary = summaryQuery.data;
+
+  const [route, setRoute] = useState<Array<{ lat: number; lng: number }>>([]);
+
+  const pickup = claimPickupLocation
+    ?? (claimedDonationPreview?.latitude != null && claimedDonationPreview?.longitude != null
+      ? { lat: claimedDonationPreview.latitude, lng: claimedDonationPreview.longitude }
+      : null)
+    ?? (latestClaim?.item_details?.latitude != null && latestClaim?.item_details?.longitude != null
+      ? { lat: latestClaim.item_details.latitude, lng: latestClaim.item_details.longitude }
+      : null);
+
+  const recipient = claimRecipientLocation
+    ? { lat: claimRecipientLocation.latitude, lng: claimRecipientLocation.longitude }
+    : latestClaim?.recipient_location
+      ? { lat: latestClaim.recipient_location.latitude, lng: latestClaim.recipient_location.longitude }
+      : null;
+
+  console.log("[DYNAMIC COORDS]", { pickup, recipient });
+
+  useEffect(() => {
+    if (!pickup || !recipient) return;
+
+    const fetchRoute = async () => {
+      try {
+        const res = await fetch(
+          `https://router.project-osrm.org/route/v1/driving/${pickup.lng},${pickup.lat};${recipient.lng},${recipient.lat}?overview=full&geometries=geojson`
+        );
+
+        const data = await res.json();
+
+        if (data.routes && data.routes[0]) {
+          const coords = data.routes[0].geometry.coordinates;
+
+          const path = coords.map(([lng, lat]: [number, number]) => ({
+            lat,
+            lng,
+          }));
+
+          setRoute(path);
+        } else {
+          setRoute([pickup, recipient]);
+        }
+      } catch (error) {
+        console.error("[OSRM ERROR]", error);
+        setRoute([pickup, recipient]);
+      }
+    };
+
+    fetchRoute();
+  }, [pickup?.lat, pickup?.lng, recipient?.lat, recipient?.lng]);
 
   useEffect(() => {
     let cancelled = false;
@@ -577,6 +691,7 @@ const RecipientDashboard = () => {
   };
 
   const canCancelClaim = latestClaim?.delivery_status === "pending" || latestClaim?.delivery_status === "assigned";
+  const deliveryAction = latestClaim ? getDeliveryAction(latestClaim.delivery_status) : null;
 
   const handleCancelClaim = () => {
     if (!latestClaim) {
@@ -586,6 +701,17 @@ const RecipientDashboard = () => {
       return;
     }
     cancelClaimMutation.mutate(latestClaim.id);
+  };
+
+  const handleDeliveryStatusUpdate = () => {
+    if (!latestClaim || !deliveryAction) {
+      return;
+    }
+
+    updateDeliveryStatusMutation.mutate({
+      requestId: latestClaim.id,
+      status: deliveryAction.nextStatus,
+    });
   };
 
   return (
@@ -618,6 +744,19 @@ const RecipientDashboard = () => {
       </header>
 
       <main className="mx-auto max-w-7xl space-y-8 px-4 py-6">
+        {(() => {
+          if (!pickup || typeof pickup.lat !== "number") {
+            console.warn("Invalid pickup coords");
+            return null;
+          }
+          if (!recipient || typeof recipient.lat !== "number") {
+            console.warn("Invalid recipient coords");
+            return null;
+          }
+          console.log("[FINAL PICKUP]", pickup);
+          console.log("[FINAL RECIPIENT]", recipient);
+          return <SimpleMap pickup={pickup} recipient={recipient} route={route} />;
+        })()}
         {!isVerified && (
           <div className="bg-amber-100 text-amber-800 px-4 py-3 rounded mb-4">
             Your account is pending verification. You will be able to claim donations once an admin approves your account.
@@ -812,22 +951,42 @@ const RecipientDashboard = () => {
                       <p className="mt-2 text-sm text-muted-foreground">
                         {latestClaim.item_details.address}
                       </p>
+                      <div className="mt-3 space-y-1 text-sm text-muted-foreground">
+                        <p>Donor: {latestClaim.item_details.donor.first_name || latestClaim.item_details.donor.email}</p>
+                        <p>📞 {latestClaim.item_details.donor.phone || "Not provided"}</p>
+                        <p>📧 {latestClaim.item_details.donor.email}</p>
+                      </div>
                     </div>
                     <Badge className="border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-50">
                       {getEtaLabel(latestClaim)}
                     </Badge>
                   </div>
 
-                  {canCancelClaim && (
-                    <div className="flex justify-end">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={handleCancelClaim}
-                        disabled={cancelClaimMutation.isPending}
-                      >
-                        {cancelClaimMutation.isPending ? "Cancelling..." : "Cancel claim"}
-                      </Button>
+                  {(canCancelClaim || deliveryAction || latestClaim.delivery_status === "delivered") && (
+                    <div className="flex justify-end gap-3">
+                      {canCancelClaim && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={handleCancelClaim}
+                          disabled={cancelClaimMutation.isPending || updateDeliveryStatusMutation.isPending}
+                        >
+                          {cancelClaimMutation.isPending ? "Cancelling..." : "Cancel claim"}
+                        </Button>
+                      )}
+                      {deliveryAction && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={handleDeliveryStatusUpdate}
+                          disabled={updateDeliveryStatusMutation.isPending || cancelClaimMutation.isPending}
+                        >
+                          {updateDeliveryStatusMutation.isPending ? deliveryAction.loadingLabel : deliveryAction.label}
+                        </Button>
+                      )}
+                      {latestClaim.delivery_status === "delivered" && (
+                        <span className="flex items-center text-sm font-medium text-emerald-600">Delivered ✓</span>
+                      )}
                     </div>
                   )}
 

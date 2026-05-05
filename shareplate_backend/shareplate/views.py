@@ -4,6 +4,7 @@ import random
 from django.contrib.auth import authenticate
 from django.db import transaction
 from django.db.models import Count, Q
+from django.http import HttpResponse
 from django.utils import timezone
 from geopy.geocoders import Nominatim
 from rest_framework import generics, permissions, serializers, status
@@ -213,10 +214,7 @@ class UserRegistrationView(APIView):
 
         with transaction.atomic():
             user = serializer.save()
-            password = request.data.get('password')
-            if password:
-                user.set_password(password)
-                user.save(update_fields=['password'])
+
 
             token, _ = Token.objects.get_or_create(user=user)
             user_data = UserProfileSerializer(user).data
@@ -437,3 +435,33 @@ class UpdateDeliveryStatusView(APIView):
 
         request_obj.refresh_from_db()
         return Response(RequestSerializer(request_obj).data, status=status.HTTP_200_OK)
+
+
+class VerifyUserView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, token):
+        try:
+            user = UserProfile.objects.get(verification_token=token)
+            user.is_verified = True
+            user.verification_token = None
+            user.save()
+            html = f"""
+            <html>
+                <body style="font-family: sans-serif; padding: 40px; text-align: center;">
+                    <h2 style="color: #16a34a;">✅ User verified successfully.</h2>
+                    <p><b>{user.first_name} {user.last_name}</b> ({user.email}) has been approved on SharePlate.</p>
+                </body>
+            </html>
+            """
+            return HttpResponse(html)
+        except UserProfile.DoesNotExist:
+            html = """
+            <html>
+                <body style="font-family: sans-serif; padding: 40px; text-align: center;">
+                    <h2 style="color: #dc2626;">❌ Verification Failed</h2>
+                    <p>Invalid or expired verification link.</p>
+                </body>
+            </html>
+            """
+            return HttpResponse(html, status=404)

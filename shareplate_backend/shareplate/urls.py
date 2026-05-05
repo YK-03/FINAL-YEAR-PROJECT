@@ -11,6 +11,7 @@ from .views import (
     RequestDetailView,
     RequestListCreateView,
     UpdateDeliveryStatusView,
+    VerifyUserView,
 )
 
 urlpatterns = [
@@ -24,6 +25,7 @@ urlpatterns = [
     path('users/register/', UserRegistrationView.as_view(), name='user-register'),
     path('users/', UserListView.as_view(), name='user-list'),
     path('users/me/', MeView.as_view(), name='user-me'),
+    path('verify-user/<uuid:token>/', VerifyUserView.as_view(), name='verify-user'),
 
     # Login
     path('api-token-auth/', ObtainAuthToken.as_view(), name='api-token-auth'),

@@ -56,6 +56,7 @@ export interface User {
   role: "donor" | "recipient" | null;
   phone_number?: string;
   email_notifications_enabled?: boolean;
+  is_verified?: boolean;
 }
 
 export interface CompactUser {
@@ -65,6 +66,7 @@ export interface CompactUser {
   last_name: string;
   full_name: string;
   role: "donor" | "recipient" | null;
+  phone?: string;
 }
 
 export interface DonationItem {
@@ -104,7 +106,7 @@ export interface RegisterUserData {
   first_name?: string;
   last_name?: string;
   role: "donor" | "recipient";
-  phone_number?: string;
+  phone?: string;
 }
 
 export interface DeliveryRequest {

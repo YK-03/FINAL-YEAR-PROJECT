@@ -1,6 +1,6 @@
 # SharePlate
 
-SharePlate is a full stack food donation platform that connects food donors with recipients to reduce food waste and improve access to surplus food within local communities.
+SharePlate is a full-stack food donation platform that connects food donors with recipients to reduce food waste and improve access to surplus food within local communities.
 
 ---
 
@@ -8,16 +8,16 @@ SharePlate is a full stack food donation platform that connects food donors with
 
 SharePlate enables individuals, restaurants, organizations, and community groups to donate surplus food while allowing verified recipients to discover, claim, and coordinate pickups through a unified platform.
 
-The application focuses on simplifying the donation process, improving transparency, and making food redistribution more efficient through real time updates, route visualization, and role based access.
+The application focuses on simplifying the donation process, improving transparency, and making food redistribution more efficient through real-time updates, route visualization, and role-based access.
 
 ---
 
 ## Features
 
 - Food donation management
-- Real time donation claiming
+- Real-time donation claiming
 - Donor and recipient dashboards
-- Role based authentication
+- Role-based authentication
 - Admin verification system
 - Interactive maps using OpenStreetMap
 - Route generation using OSRM
